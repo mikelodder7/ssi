@@ -6,7 +6,6 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use chrono::prelude::*;
 
-const EDPK_PREFIX: [u8; 4] = [13, 15, 37, 217];
 const EDSIG_PREFIX: [u8; 5] = [9, 245, 205, 134, 18];
 const SPSIG_PREFIX: [u8; 5] = [13, 115, 101, 19, 63];
 const P2SIG_PREFIX: [u8; 4] = [54, 240, 44, 52];
@@ -1565,11 +1564,13 @@ impl ProofSuite for TezosJcsSignature2021 {
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<ProofPreparation, Error> {
         // TODO: dereference VM URL to check if VM already contains public key.
-        let jwk_value = serde_json::to_value(public_key.to_public())?;
+        // "z" is multibase for base58. Usually publicKeyMultibase is used with multicodec, but
+        // here we use it for Tezos-style base58 key representation.
+        let pkmb = "z".to_string() + &crate::tzkey::jwk_to_tezos_key(&public_key.to_public())?;
         let mut props = extra_proof_properties.clone();
         props
             .get_or_insert(Map::new())
-            .insert("publicKeyJwk".to_string(), jwk_value);
+            .insert("publicKeyMultibase".to_string(), Value::String(pkmb));
 
         let proof = Proof {
             context: TZJCSVM_CONTEXT.clone(),
@@ -1612,13 +1613,19 @@ impl ProofSuite for TezosJcsSignature2021 {
             .verification_method
             .as_ref()
             .ok_or(Error::MissingVerificationMethod)?;
-        let proof_jwk_opt: Option<JWK> = match proof.property_set {
-            Some(ref props) => match props.get("publicKeyJwk") {
-                Some(jwk_value) => serde_json::from_value(jwk_value.clone())?,
-                None => None,
-            },
-            None => None,
-        };
+        let mut proof_jwk_opt: Option<JWK> = None;
+        let mut proof_pkmb_opt: Option<&str> = None;
+        if let Some(ref props) = proof.property_set {
+            if let Some(jwk_value) = props.get("publicKeyJwk") {
+                proof_jwk_opt = Some(serde_json::from_value(jwk_value.clone())?);
+            }
+            if let Some(ref pkmb_value) = props.get("publicKeyMultibase") {
+                if proof_jwk_opt.is_some() {
+                    return Err(Error::MultipleKeyMaterial);
+                }
+                proof_pkmb_opt = pkmb_value.as_str();
+            }
+        }
 
         let (algorithm, sig) = crate::tzkey::decode_tzsig(sig_bs58)?;
         let vm = resolve_vm(&verification_method, resolver).await?;
@@ -1640,6 +1647,12 @@ impl ProofSuite for TezosJcsSignature2021 {
         } else {
             if let Some(account_id) = account_id_opt {
                 // VM does not have publicKeyJwk: proof must have public key
+                if let Some(proof_pkmb) = proof_pkmb_opt {
+                    if !proof_pkmb.starts_with("z") {
+                        return Err(Error::ExpectedMultibaseZ);
+                    }
+                    proof_jwk_opt = Some(crate::tzkey::jwk_from_tezos_key(&proof_pkmb[1..])?);
+                }
                 if let Some(proof_jwk) = proof_jwk_opt {
                     // Proof has public key: verify it with blockchainAccountId,
                     account_id.verify(&proof_jwk)?;

@@ -42,9 +42,9 @@
         "@id": "https://w3id.org/security#verificationMethod",
         "@type": "@id"
       },
-      "publicKeyJwk": {
-        "@id": "https://w3id.org/security#publicKeyJwk",
-        "@type": "@json"
+      "publicKeyMultibase": {
+        "@id": "https://w3id.org/security#publicKeyMultibase",
+        "@type": "https://w3id.org/security#multibase"
       }
     }
   }

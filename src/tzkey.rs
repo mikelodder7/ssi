@@ -2,6 +2,45 @@ use crate::error::Error;
 use crate::jwk::{Algorithm, Base64urlUInt, OctetParams, Params, JWK};
 use core::convert::TryFrom;
 
+const EDPK_PREFIX: [u8; 4] = [13, 15, 37, 217];
+
+pub fn jwk_to_tezos_key(jwk: &JWK) -> Result<String, Error> {
+    let mut tzkey_prefixed = Vec::new();
+    let (prefix, bytes) = match &jwk.params {
+        Params::OKP(okp_params) if okp_params.curve == "Ed25519" => {
+            if let Some(ref sk) = okp_params.private_key {
+                return Err(Error::UnsupportedAlgorithm);
+            }
+            (EDPK_PREFIX, &okp_params.public_key.0)
+        }
+        /*
+         * TODO
+        Params::EC(ec_params) => {
+            let curve = match &ec_params.curve {
+                Some(curve) => curve,
+                None => return None,
+            };
+            match &curve[..] {
+                "secp256k1" => {
+            (SPPK_PREFIX, okp_params.public_key.0)
+                }
+                "P-256" => {
+            (P2PK_PREFIX, okp_params.public_key.0)
+                }
+                _ => {}
+            }
+        }
+        */
+        _ => {
+            return Err(Error::UnsupportedAlgorithm);
+        }
+    };
+    tzkey_prefixed.extend_from_slice(&prefix);
+    tzkey_prefixed.extend_from_slice(&bytes);
+    let tzkey = bs58::encode(tzkey_prefixed).with_check().into_string();
+    Ok(tzkey)
+}
+
 /// Parse a Tezos key string into a JWK.
 pub fn jwk_from_tezos_key(tz_pk: &str) -> Result<JWK, Error> {
     if tz_pk.len() < 4 {
