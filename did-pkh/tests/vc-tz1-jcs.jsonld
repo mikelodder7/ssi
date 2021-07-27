@@ -9,7 +9,7 @@
     "id": "did:pkh:tz:tz1TwZZZSShtM73oEr74aDtDcns3UmFqaca6"
   },
   "issuer": "did:pkh:tz:tz1TwZZZSShtM73oEr74aDtDcns3UmFqaca6",
-  "issuanceDate": "2021-07-27T17:49:03.714Z",
+  "issuanceDate": "2021-07-27T19:37:15.715Z",
   "proof": {
     "@context": {
       "TezosJcsSignature2021": {
@@ -49,9 +49,9 @@
             "@type": "@vocab"
           },
           "proofValue": "https://w3id.org/security#proofValue",
-          "publicKeyJwk": {
-            "@id": "https://w3id.org/security#publicKeyJwk",
-            "@type": "@json"
+          "publicKeyMultibase": {
+            "@id": "https://w3id.org/security#publicKeyMultibase",
+            "@type": "https://w3id.org/security#multibase"
           },
           "type": "@type",
           "verificationMethod": {
@@ -64,13 +64,9 @@
     },
     "type": "TezosJcsSignature2021",
     "proofPurpose": "assertionMethod",
-    "proofValue": "edsigti1BpHn496WkFuV86SkoJwdLP2EGqBEcP6SpWof5mrseQjdqNtY9xiXqeJgbYvNZUB81DtSLMeRNecNz5Vs8WE9cLd3q7S",
+    "proofValue": "edsigtkX1dEozAQyRrD3VKEzRD6GVGRdujW2iA8CAwhfLb2ByEkcbyqMz48N1i5pzdtx3cQRwJHWb35DnzFN37V8DZKnMbbQPPX",
     "verificationMethod": "did:pkh:tz:tz1TwZZZSShtM73oEr74aDtDcns3UmFqaca6#TezosMethod2021",
-    "created": "2021-07-27T17:49:03.714Z",
-    "publicKeyJwk": {
-      "crv": "Ed25519",
-      "kty": "OKP",
-      "x": "rVEB0Icbomw1Ir-ck52iCZl1SICc5lCg2pxI8AmydDw"
-    }
+    "created": "2021-07-27T19:37:15.716Z",
+    "publicKeyMultibase": "zedpkuxZ5AQVCeEJ9inUG3w6VFhio5KBwC22ekPLBzcvub3QY2DvJ7n"
   }
 }
