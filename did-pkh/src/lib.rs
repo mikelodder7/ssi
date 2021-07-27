@@ -1193,6 +1193,7 @@ mod tests {
     #[tokio::test]
     async fn verify_vc() {
         test_verify_vc(include_str!("../tests/vc-tz1.jsonld")).await;
+        test_verify_vc(include_str!("../tests/vc-tz1-jcs.jsonld")).await;
         test_verify_vc(include_str!("../tests/vc-eth-eip712sig.jsonld")).await;
         test_verify_vc(include_str!("../tests/vc-eth-eip712vm.jsonld")).await;
         test_verify_vc(include_str!("../tests/vc-eth-epsig.jsonld")).await;

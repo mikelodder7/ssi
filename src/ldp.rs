@@ -39,6 +39,10 @@ lazy_static! {
         let context_str = ssi_contexts::TZVM_V1;
         serde_json::from_str(&context_str).unwrap()
     };
+    pub static ref TZJCSVM_CONTEXT: Value = {
+        let context_str = ssi_contexts::TZJCSVM_V1;
+        serde_json::from_str(&context_str).unwrap()
+    };
     pub static ref EIP712VM_CONTEXT: Value = {
         let context_str = ssi_contexts::EIP712VM;
         serde_json::from_str(&context_str).unwrap()
@@ -84,6 +88,7 @@ pub fn get_proof_suite(proof_type: &str) -> Result<&(dyn ProofSuite + Sync), Err
             &EthereumEip712Signature2021
         }
         "TezosSignature2021" => &TezosSignature2021,
+        "TezosJcsSignature2021" => &TezosJcsSignature2021,
         "SolanaSignature2021" => &SolanaSignature2021,
         "JsonWebSignature2020" => &JsonWebSignature2020,
         "EcdsaSecp256r1Signature2019" => &EcdsaSecp256r1Signature2019,
@@ -1346,6 +1351,21 @@ async fn micheline_from_document_and_options(
     Ok(data)
 }
 
+async fn micheline_from_document_and_options_jcs(
+    document: &(dyn LinkedDataDocument + Sync),
+    proof: &Proof,
+) -> Result<Vec<u8>, Error> {
+    let mut doc_value = document.to_value()?;
+    let doc_obj = doc_value.as_object_mut().ok_or(Error::ExpectedObject)?;
+    let mut proof_value = serde_json::to_value(proof)?;
+    let proof_obj = proof_value.as_object_mut().ok_or(Error::ExpectedObject)?;
+    proof_obj.remove("proofValue");
+    doc_obj.insert("proof".to_string(), proof_value);
+    let msg = serde_jcs::to_string(&doc_value)?;
+    let data = crate::tzkey::encode_tezos_signed_message(&msg)?;
+    Ok(data)
+}
+
 async fn string_from_document_and_options(
     document: &(dyn LinkedDataDocument + Sync),
     proof: &Proof,
@@ -1469,6 +1489,144 @@ impl ProofSuite for TezosSignature2021 {
         }
 
         let micheline = micheline_from_document_and_options(document, &proof).await?;
+        let account_id_opt: Option<BlockchainAccountId> = match vm.blockchain_account_id {
+            Some(account_id_string) => Some(account_id_string.parse()?),
+            None => None,
+        };
+
+        // VM must have either publicKeyJwk or blockchainAccountId.
+        if let Some(vm_jwk) = vm.public_key_jwk {
+            // If VM has publicKey, use that to veify the signature.
+            crate::jws::verify_bytes(algorithm, &micheline, &vm_jwk, &sig)?;
+            // Note: VM blockchainAccountId is ignored in this case.
+        } else {
+            if let Some(account_id) = account_id_opt {
+                // VM does not have publicKeyJwk: proof must have public key
+                if let Some(proof_jwk) = proof_jwk_opt {
+                    // Proof has public key: verify it with blockchainAccountId,
+                    account_id.verify(&proof_jwk)?;
+                    // and verify the signature.
+                    crate::jws::verify_bytes(algorithm, &micheline, &proof_jwk, &sig)?;
+                } else {
+                    return Err(Error::MissingKey);
+                }
+            } else {
+                return Err(Error::MissingKey);
+            }
+        };
+        Ok(())
+    }
+}
+
+pub struct TezosJcsSignature2021;
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+impl ProofSuite for TezosJcsSignature2021 {
+    async fn sign(
+        &self,
+        document: &(dyn LinkedDataDocument + Sync),
+        options: &LinkedDataProofOptions,
+        key: &JWK,
+        extra_proof_properties: Option<Map<String, Value>>,
+    ) -> Result<Proof, Error> {
+        let algorithm = key.get_algorithm().ok_or(Error::MissingAlgorithm)?;
+        let jwk_value = serde_json::to_value(key.to_public())?;
+        let mut props = extra_proof_properties.clone();
+        props
+            .get_or_insert(Map::new())
+            .insert("publicKeyJwk".to_string(), jwk_value);
+        let mut proof = Proof {
+            context: TZJCSVM_CONTEXT.clone(),
+            ..Proof::new("TezosJcsSignature2021")
+                .with_options(options)
+                .with_properties(props)
+        };
+        let micheline = micheline_from_document_and_options(document, &proof).await?;
+        let sig = crate::jws::sign_bytes(algorithm, &micheline, key)?;
+        let mut sig_prefixed = Vec::new();
+        let prefix: &[u8] = match algorithm {
+            Algorithm::EdBlake2b => &EDSIG_PREFIX,
+            Algorithm::ESBlake2bK => &SPSIG_PREFIX,
+            Algorithm::ESBlake2b => &P2SIG_PREFIX,
+            _ => return Err(Error::UnsupportedAlgorithm),
+        };
+        sig_prefixed.extend_from_slice(&prefix);
+        sig_prefixed.extend_from_slice(&sig);
+        let sig_bs58 = bs58::encode(sig_prefixed).with_check().into_string();
+        proof.proof_value = Some(sig_bs58);
+        Ok(proof)
+    }
+
+    async fn prepare(
+        &self,
+        document: &(dyn LinkedDataDocument + Sync),
+        options: &LinkedDataProofOptions,
+        public_key: &JWK,
+        extra_proof_properties: Option<Map<String, Value>>,
+    ) -> Result<ProofPreparation, Error> {
+        // TODO: dereference VM URL to check if VM already contains public key.
+        let jwk_value = serde_json::to_value(public_key.to_public())?;
+        let mut props = extra_proof_properties.clone();
+        props
+            .get_or_insert(Map::new())
+            .insert("publicKeyJwk".to_string(), jwk_value);
+
+        let proof = Proof {
+            context: TZJCSVM_CONTEXT.clone(),
+            ..Proof::new("TezosJcsSignature2021")
+                .with_options(options)
+                .with_properties(props)
+        };
+        let micheline = micheline_from_document_and_options_jcs(document, &proof).await?;
+        let micheline_string = hex::encode(micheline);
+        Ok(ProofPreparation {
+            proof,
+            jws_header: None,
+            signing_input: SigningInput::Micheline {
+                micheline: micheline_string,
+            },
+        })
+    }
+
+    async fn complete(
+        &self,
+        preparation: ProofPreparation,
+        signature: &str,
+    ) -> Result<Proof, Error> {
+        let mut proof = preparation.proof;
+        proof.proof_value = Some(signature.to_string());
+        Ok(proof)
+    }
+
+    async fn verify(
+        &self,
+        proof: &Proof,
+        document: &(dyn LinkedDataDocument + Sync),
+        resolver: &dyn DIDResolver,
+    ) -> Result<(), Error> {
+        let sig_bs58 = proof
+            .proof_value
+            .as_ref()
+            .ok_or(Error::MissingProofSignature)?;
+        let verification_method = proof
+            .verification_method
+            .as_ref()
+            .ok_or(Error::MissingVerificationMethod)?;
+        let proof_jwk_opt: Option<JWK> = match proof.property_set {
+            Some(ref props) => match props.get("publicKeyJwk") {
+                Some(jwk_value) => serde_json::from_value(jwk_value.clone())?,
+                None => None,
+            },
+            None => None,
+        };
+
+        let (algorithm, sig) = crate::tzkey::decode_tzsig(sig_bs58)?;
+        let vm = resolve_vm(&verification_method, resolver).await?;
+        if vm.type_ != "TezosMethod2021" {
+            return Err(Error::VerificationMethodMismatch);
+        }
+
+        let micheline = micheline_from_document_and_options_jcs(document, &proof).await?;
         let account_id_opt: Option<BlockchainAccountId> = match vm.blockchain_account_id {
             Some(account_id_string) => Some(account_id_string.parse()?),
             None => None,
@@ -1780,6 +1938,24 @@ mod tests {
         let vm = format!("{}#TezosMethod2021", "did:example:foo");
         let issue_options = LinkedDataProofOptions {
             type_: Some(String::from("TezosSignature2021")),
+            verification_method: Some(URI::String(vm)),
+            ..Default::default()
+        };
+        let doc = ExampleDocument;
+        let proof = LinkedDataProofs::sign(&doc, &issue_options, &key, None)
+            .await
+            .unwrap();
+        println!("{}", serde_json::to_string(&proof).unwrap());
+    }
+
+    #[async_std::test]
+    #[cfg(feature = "secp256k1")]
+    async fn tezos_jcs_vm_tz2() {
+        let mut key = JWK::generate_secp256k1().unwrap();
+        key.algorithm = Some(Algorithm::ESBlake2bK);
+        let vm = format!("{}#TezosMethod2021", "did:example:foo");
+        let issue_options = LinkedDataProofOptions {
+            type_: Some(String::from("TezosJcsSignature2021")),
             verification_method: Some(URI::String(vm)),
             ..Default::default()
         };
