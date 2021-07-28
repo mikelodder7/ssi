@@ -1529,11 +1529,12 @@ impl ProofSuite for TezosJcsSignature2021 {
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
         let algorithm = key.get_algorithm().ok_or(Error::MissingAlgorithm)?;
-        let jwk_value = serde_json::to_value(key.to_public())?;
+        let tzpk = crate::tzkey::jwk_to_tezos_key(&key.to_public())?;
+        let pkmb = "z".to_string() + &tzpk;
         let mut props = extra_proof_properties.clone();
         props
             .get_or_insert(Map::new())
-            .insert("publicKeyJwk".to_string(), jwk_value);
+            .insert("publicKeyMultibase".to_string(), Value::String(pkmb));
         let mut proof = Proof {
             context: TZJCSVM_CONTEXT.clone(),
             ..Proof::new("TezosJcsSignature2021")
