@@ -149,6 +149,7 @@ where
         &self,
         jwk: &JWK,
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         capability_chain: &[&str],
     ) -> Result<Proof, Error> {
         let mut ps = Map::<String, Value>::new();
@@ -156,7 +157,7 @@ where
             "capabilityChain".into(),
             serde_json::to_value(capability_chain)?,
         );
-        LinkedDataProofs::sign(self, options, jwk, Some(ps)).await
+        LinkedDataProofs::sign(self, options, resolver, jwk, Some(ps)).await
     }
 
     /// Prepare to generate a linked data proof. Returns the signing input for the caller to sign
@@ -287,11 +288,12 @@ where
         &self,
         jwk: &JWK,
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         target: &URI,
     ) -> Result<Proof, Error> {
         let mut ps = Map::<String, Value>::new();
         ps.insert("capability".into(), serde_json::to_value(target)?);
-        LinkedDataProofs::sign(self, options, jwk, Some(ps)).await
+        LinkedDataProofs::sign(self, options, resolver, jwk, Some(ps)).await
     }
 
     /// Prepare to generate a linked data proof. Returns the signing input for the caller to sign
@@ -496,12 +498,16 @@ mod tests {
             proof_purpose: Some(ProofPurpose::CapabilityInvocation),
             ..Default::default()
         };
-        let signed_del = del
-            .clone()
-            .set_proof(del.generate_proof(&alice, &ldpo_alice, &[]).await.unwrap());
-        let signed_inv = inv
-            .clone()
-            .set_proof(inv.generate_proof(&bob, &ldpo_bob, &del.id).await.unwrap());
+        let signed_del = del.clone().set_proof(
+            del.generate_proof(&alice, &ldpo_alice, &dk, &[])
+                .await
+                .unwrap(),
+        );
+        let signed_inv = inv.clone().set_proof(
+            inv.generate_proof(&bob, &ldpo_bob, &dk, &del.id)
+                .await
+                .unwrap(),
+        );
 
         // happy path
         let s_d_v = signed_del.verify(None, &dk).await;
@@ -535,7 +541,7 @@ mod tests {
             ..del.clone()
         };
         let proof = wrong_del
-            .generate_proof(&alice, &ldpo_alice, &[])
+            .generate_proof(&alice, &ldpo_alice, &dk, &[])
             .await
             .unwrap();
         let signed_wrong_del = wrong_del.set_proof(proof);

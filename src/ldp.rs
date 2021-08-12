@@ -193,6 +193,7 @@ pub trait ProofSuite {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error>;
@@ -277,6 +278,7 @@ impl LinkedDataProofs {
     pub async fn sign(
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -288,8 +290,9 @@ impl LinkedDataProofs {
         else {
             pick_proof_suite(key, options.verification_method.as_ref())?
         };
+        // TODO: use resolver to pick a default key id
         suite
-            .sign(document, options, &key, extra_proof_properties)
+            .sign(document, options, resolver, &key, extra_proof_properties)
             .await
     }
 
@@ -415,6 +418,7 @@ async fn to_jws_payload(
 async fn sign(
     document: &(dyn LinkedDataDocument + Sync),
     options: &LinkedDataProofOptions,
+    _resolver: &dyn DIDResolver,
     key: &JWK,
     type_: &str,
     algorithm: Algorithm,
@@ -513,12 +517,14 @@ impl ProofSuite for RsaSignature2018 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
         sign(
             document,
             options,
+            resolver,
             key,
             "RsaSignature2018",
             Algorithm::RS256,
@@ -568,12 +574,14 @@ impl ProofSuite for Ed25519Signature2018 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
         sign(
             document,
             options,
+            resolver,
             key,
             "Ed25519Signature2018",
             Algorithm::EdDSA,
@@ -623,12 +631,14 @@ impl ProofSuite for EcdsaSecp256k1Signature2019 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
         sign(
             document,
             options,
+            resolver,
             key,
             "EcdsaSecp256k1Signature2019",
             Algorithm::ES256K,
@@ -678,6 +688,7 @@ impl ProofSuite for EcdsaSecp256k1RecoverySignature2020 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        _resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -758,6 +769,7 @@ impl ProofSuite for Ed25519BLAKE2BDigestSize20Base58CheckEncodedSignature2021 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        _resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -856,6 +868,7 @@ impl ProofSuite for P256BLAKE2BDigestSize20Base58CheckEncodedSignature2021 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        _resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -954,6 +967,7 @@ impl ProofSuite for Eip712Signature2021 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        _resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -1075,6 +1089,7 @@ impl ProofSuite for EthereumEip712Signature2021 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        _resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -1217,6 +1232,7 @@ impl ProofSuite for EthereumPersonalSignature2021 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        _resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -1368,6 +1384,7 @@ impl ProofSuite for TezosSignature2021 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        _resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -1506,6 +1523,7 @@ impl ProofSuite for SolanaSignature2021 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        _resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -1593,12 +1611,14 @@ impl ProofSuite for EcdsaSecp256r1Signature2019 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
         sign(
             document,
             options,
+            resolver,
             key,
             "EcdsaSecp256r1Signature2019",
             Algorithm::ES256,
@@ -1649,6 +1669,7 @@ impl ProofSuite for JsonWebSignature2020 {
         &self,
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        _resolver: &dyn DIDResolver,
         key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<Proof, Error> {
@@ -1783,6 +1804,7 @@ impl JsonWebSignature2020 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::did::example::DIDExample;
     use crate::jsonld::CREDENTIALS_V1_CONTEXT;
 
     struct ExampleDocument;
@@ -1827,8 +1849,9 @@ mod tests {
             verification_method: Some(URI::String(vm)),
             ..Default::default()
         };
+        let resolver = DIDExample;
         let doc = ExampleDocument;
-        let _proof = LinkedDataProofs::sign(&doc, &issue_options, &key, None)
+        let _proof = LinkedDataProofs::sign(&doc, &issue_options, &resolver, &key, None)
             .await
             .unwrap();
     }
@@ -1844,7 +1867,8 @@ mod tests {
             ..Default::default()
         };
         let doc = ExampleDocument;
-        let proof = LinkedDataProofs::sign(&doc, &issue_options, &key, None)
+        let resolver = DIDExample;
+        let proof = LinkedDataProofs::sign(&doc, &issue_options, &resolver, &key, None)
             .await
             .unwrap();
         println!("{}", serde_json::to_string(&proof).unwrap());
@@ -1863,7 +1887,8 @@ mod tests {
             ..Default::default()
         };
         let doc = ExampleDocument;
-        let proof = LinkedDataProofs::sign(&doc, &issue_options, &key, None)
+        let resolver = DIDExample;
+        let proof = LinkedDataProofs::sign(&doc, &issue_options, &resolver, &key, None)
             .await
             .unwrap();
         println!("{}", serde_json::to_string(&proof).unwrap());
@@ -1880,7 +1905,8 @@ mod tests {
             ..Default::default()
         };
         let doc = ExampleDocument;
-        let _proof = LinkedDataProofs::sign(&doc, &issue_options, &key)
+        let resolver = DIDExample;
+        let _proof = LinkedDataProofs::sign(&doc, &issue_options, &resolver, &key)
             .await
             .unwrap();
     }
