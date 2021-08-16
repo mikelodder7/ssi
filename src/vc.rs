@@ -619,7 +619,47 @@ async fn pick_default_vm(
     jwk: &JWK,
     resolver: &dyn DIDResolver,
 ) -> Result<String, Error> {
-    todo!();
+    let (res_meta, doc_opt, _meta) = resolver
+        .resolve(issuer, &ResolutionInputMetadata::default())
+        .await;
+    if let Some(err) = res_meta.error {
+        return Err(Error::UnableToResolve(err.to_string()));
+    }
+    let doc = doc_opt.ok_or_else(|| Error::UnableToResolve("Missing document".to_string()))?;
+    let vm_ids = doc
+        .get_verification_method_ids(proof_purpose.clone())
+        .map_err(|e| {
+            Error::UnableToResolve(format!("Unable to get verification methods: {}", e))
+        })?;
+    let mut err = None;
+    for vm in vm_ids {
+        // Try to find a VM that matches this JWK and controller.
+        // If one VM fails to resolve, try another.
+        match crate::ldp::resolve_vm(&vm, resolver).await {
+            Ok(vmm) => match vmm.get_jwk() {
+                Ok(resolved_jwk) => {
+                    if resolved_jwk.equals_public(jwk) {
+                        if vmm.controller != issuer {
+                            err = Some(Error::ControllerMismatch(
+                                issuer.to_string(),
+                                vmm.controller,
+                            ));
+                        } else {
+                            // Found appropriate VM.
+                            return Ok(vm);
+                        }
+                    }
+                }
+                Err(e) => err = Some(e),
+            },
+            Err(e) => err = Some(e),
+        }
+    }
+    // No matching VM found. Return any error encountered.
+    if let Some(err) = err {
+        return Err(err);
+    }
+    Err(Error::KeyMismatch)
 }
 
 impl Issuer {
@@ -848,11 +888,9 @@ impl Credential {
                 )
                 .await?;
             } else {
-                /* TODO
                 key_id = Some(
                     pick_default_vm(&issuer, ProofPurpose::AssertionMethod, &jwk, resolver).await?,
                 );
-                */
             }
         }
 
@@ -2096,7 +2134,7 @@ mod tests {
             ],
             "id": "http://example.org/credentials/192783",
             "type": "VerifiableCredential",
-            "issuer": "https://example.org/issuers/1345",
+            "issuer": "did:example:foo",
             "issuanceDate": "2020-08-25T11:26:53Z",
             "expirationDate": "2021-08-25T00:00:00Z",
             "credentialSubject": {
