@@ -20,7 +20,7 @@ use crate::eip712::TypedData;
 use crate::error::Error;
 use crate::hash::sha256;
 use crate::jwk::Base64urlUInt;
-use crate::jwk::{Algorithm, OctetParams as JWKOctetParams, Params as JWKParams, JWK};
+use crate::jwk::{Algorithm, Params as JWKParams, JWK};
 use crate::jws::Header;
 use crate::rdf::DataSet;
 use crate::urdna2015;
