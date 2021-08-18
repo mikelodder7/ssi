@@ -1722,7 +1722,9 @@ pub async fn get_verification_methods_for_purpose(
         return Err(err.to_string());
     }
     let doc = doc_opt.ok_or("Missing document".to_string())?;
-    doc.get_verification_method_ids(proof_purpose)
+    doc.get_verification_method_ids_recursive(proof_purpose, resolver)
+        .await
+        .map_err(String::from)
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
