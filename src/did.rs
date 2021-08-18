@@ -35,6 +35,9 @@ pub const ALT_DEFAULT_CONTEXT: &str = crate::jsonld::W3ID_DID_V1_CONTEXT;
 // v0.11 context used by universal resolver
 pub const V0_11_CONTEXT: &str = "https://w3id.org/did/v0.11";
 
+// Maximum depth to follow DID controller property.
+pub const MAX_CONTROLLER_DEPTH: usize = 10;
+
 // @TODO parsed data structs for DID and DIDURL
 type DID = String;
 
@@ -793,6 +796,77 @@ impl Document {
             rel => return Err(format!("Unsupported verification relationship: {:?}", rel)),
         };
         let vm_ids = vms.iter().flatten().map(|vm| vm.get_id(did)).collect();
+        Ok(vm_ids)
+    }
+
+    /// Get verification method ids from a DID document, for
+    /// a specific [verification relationship](VerificationRelationship).
+    /// Verify each verification method controller relationship to the DID subject.
+    pub async fn get_verification_method_ids_checked(
+        &self,
+        verification_relationship: VerificationRelationship,
+        resolver: &dyn DIDResolver,
+    ) -> Result<Vec<String>, Error> {
+        let vm_ids = self
+            .get_verification_method_ids(verification_relationship.clone())
+            .map_err(|e| {
+                Error::UnableToResolve(format!("Unable to get verification method ids: {:?}", e))
+            })?;
+        for vm_id in &vm_ids {
+            let vmm = crate::ldp::resolve_vm(&vm_id, resolver).await?;
+            // Assert statement (vm, controller, issuer)
+            if vmm.controller != self.id {
+                return Err(Error::ControllerMismatch(
+                    self.id.to_string(),
+                    vmm.controller,
+                ));
+            }
+        }
+        Ok(vm_ids)
+    }
+
+    /// Get verification method ids from a DID document, for
+    /// a specific [verification relationship](VerificationRelationship).
+    /// Recurse through DID controllers.
+    pub async fn get_verification_method_ids_recursive(
+        &self,
+        verification_relationship: VerificationRelationship,
+        resolver: &dyn DIDResolver,
+    ) -> Result<Vec<String>, Error> {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        let mut stack = vec![];
+        let mut vm_ids = self
+            .get_verification_method_ids_checked(verification_relationship.clone(), resolver)
+            .await?;
+        for controller in self.controller.iter().flatten() {
+            stack.push(controller.clone());
+        }
+        seen.insert(self.id.clone());
+        while let Some(did) = stack.pop() {
+            if seen.contains(&did) {
+                continue;
+            }
+            if seen.len() > MAX_CONTROLLER_DEPTH {
+                return Err(Error::ControllerDepth);
+            }
+            let (res_meta, doc_opt, _meta) = resolver
+                .resolve(&did, &ResolutionInputMetadata::default())
+                .await;
+            if let Some(err) = res_meta.error {
+                return Err(Error::UnableToResolve(err.to_string()));
+            }
+            let doc =
+                doc_opt.ok_or_else(|| Error::UnableToResolve("Missing document".to_string()))?;
+            seen.insert(did);
+            for controller in doc.controller.iter().flatten() {
+                stack.push(controller.clone());
+            }
+            let mut more_vm_ids = doc
+                .get_verification_method_ids_checked(verification_relationship.clone(), resolver)
+                .await?;
+            vm_ids.append(&mut more_vm_ids);
+        }
         Ok(vm_ids)
     }
 

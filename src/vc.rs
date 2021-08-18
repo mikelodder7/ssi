@@ -585,10 +585,8 @@ async fn ensure_verification_relationship(
     let doc = doc_opt.ok_or_else(|| Error::UnableToResolve("Missing document".to_string()))?;
     // Assert statement (issuer, proofPurpose, vm)
     let expected_vm_ids = doc
-        .get_verification_method_ids(proof_purpose.clone())
-        .map_err(|e| {
-            Error::UnableToResolve(format!("Unable to get verification method ids: {}", e))
-        })?;
+        .get_verification_method_ids_recursive(proof_purpose.clone(), resolver)
+        .await?;
     let vm = vm.to_string();
     if !expected_vm_ids.contains(&vm) {
         return Err(Error::MissingVerificationRelationship(
@@ -598,13 +596,6 @@ async fn ensure_verification_relationship(
         ));
     }
     let vmm = crate::ldp::resolve_vm(&vm, resolver).await?;
-    // Assert statement (vm, controller, issuer)
-    if vmm.controller != issuer {
-        return Err(Error::ControllerMismatch(
-            issuer.to_string(),
-            vmm.controller,
-        ));
-    }
     // Assert jwk is valid for resolved vm
     let resolved_jwk = vmm.get_jwk()?;
     if !resolved_jwk.equals_public(jwk) {
@@ -627,10 +618,8 @@ async fn pick_default_vm(
     }
     let doc = doc_opt.ok_or_else(|| Error::UnableToResolve("Missing document".to_string()))?;
     let vm_ids = doc
-        .get_verification_method_ids(proof_purpose.clone())
-        .map_err(|e| {
-            Error::UnableToResolve(format!("Unable to get verification methods: {}", e))
-        })?;
+        .get_verification_method_ids_recursive(proof_purpose.clone(), resolver)
+        .await?;
     let mut err = None;
     for vm in vm_ids {
         // Try to find a VM that matches this JWK and controller.
@@ -639,15 +628,8 @@ async fn pick_default_vm(
             Ok(vmm) => match vmm.get_jwk() {
                 Ok(resolved_jwk) => {
                     if resolved_jwk.equals_public(jwk) {
-                        if vmm.controller != issuer {
-                            err = Some(Error::ControllerMismatch(
-                                issuer.to_string(),
-                                vmm.controller,
-                            ));
-                        } else {
-                            // Found appropriate VM.
-                            return Ok(vm);
-                        }
+                        // Found appropriate VM.
+                        return Ok(vm.to_string());
                     }
                 }
                 Err(e) => err = Some(e),
