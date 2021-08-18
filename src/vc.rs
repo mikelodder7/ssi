@@ -672,6 +672,38 @@ impl Issuer {
     }
 }
 
+// When issuing a VC/VP: if a verificationMethod was not provided, pick one. If one was provided,
+// verify that it is correct for the given issuer and proof purpose.
+async fn ensure_or_pick_vm(
+    issuer: &str,
+    proof_purpose: ProofPurpose,
+    vm_id: Option<&str>,
+    jwk: &JWK,
+    resolver: &dyn DIDResolver,
+) -> Result<String, Error> {
+    let vm_id = if let Some(vm_id) = vm_id {
+        if !issuer.starts_with("did:") {
+            // TODO: support non-DID issuers.
+            // Unable to verify verification relationship for non-DID issuers.
+            // Allow some for testing purposes only.
+            match &issuer[..] {
+                "https://example.edu/issuers/14" => {
+                    // https://github.com/w3c/vc-test-suite/blob/cdc7835/test/vc-data-model-1.0/input/example-016-jwt.jsonld#L8
+                }
+                _ => {
+                    return Err(Error::UnsupportedNonDIDIssuer(issuer.to_string()));
+                }
+            }
+        } else {
+            ensure_verification_relationship(&issuer, proof_purpose, vm_id, &jwk, resolver).await?;
+        }
+        vm_id.to_string()
+    } else {
+        pick_default_vm(&issuer, proof_purpose, &jwk, resolver).await?
+    };
+    Ok(vm_id)
+}
+
 impl Credential {
     pub fn from_json(s: &str) -> Result<Self, Error> {
         let vp: Self = serde_json::from_str(s)?;
@@ -864,7 +896,7 @@ impl Credential {
             crate::jwk::Algorithm::None
         };
         // Ensure consistency between key ID and verification method URI.
-        let mut key_id = match (
+        let key_id = match (
             jwk.and_then(|jwk| jwk.key_id.clone()),
             verification_method.to_owned(),
         ) {
@@ -877,36 +909,27 @@ impl Credential {
             }
         };
         let issuer = self.issuer.as_ref().ok_or(Error::MissingIssuer)?.get_id();
-        if let Some(jwk) = jwk {
-            if let Some(ref key_id) = key_id {
-                if !issuer.starts_with("did:") {
-                    // TODO: support non-DID issuers.
-                    // Unable to verify verification relationship for non-DID issuers.
-                    // Allow some for testing purposes only.
-                    match &issuer[..] {
-                        "https://example.edu/issuers/14" => {
-                            // https://github.com/w3c/vc-test-suite/blob/cdc7835/test/vc-data-model-1.0/input/example-016-jwt.jsonld#L8
-                        }
-                        _ => {
-                            return Err(Error::UnsupportedNonDIDIssuer(issuer));
-                        }
-                    }
-                } else {
-                    ensure_verification_relationship(
-                        &issuer,
-                        ProofPurpose::AssertionMethod,
-                        key_id,
-                        &jwk,
-                        resolver,
-                    )
-                    .await?;
-                }
-            } else {
-                key_id = Some(
-                    pick_default_vm(&issuer, ProofPurpose::AssertionMethod, &jwk, resolver).await?,
-                );
+        let key_id: Option<String> = if let Some(jwk) = jwk {
+            let key_id_ref = match key_id {
+                Some(ref kid) => Some(kid.as_str()),
+                None => None,
+            };
+            Some(
+                ensure_or_pick_vm(
+                    &issuer,
+                    ProofPurpose::AssertionMethod,
+                    key_id_ref,
+                    &jwk,
+                    resolver,
+                )
+                .await?,
+            )
+        } else {
+            if key_id.is_some() {
+                return Err(Error::MissingKey);
             }
-        }
+            None
+        };
 
         let header = Header {
             algorithm,
@@ -1297,7 +1320,7 @@ impl Presentation {
         &self,
         jwk: Option<&JWK>,
         options: &LinkedDataProofOptions,
-        _resolver: &dyn DIDResolver,
+        resolver: &dyn DIDResolver,
     ) -> Result<String, Error> {
         let LinkedDataProofOptions {
             verification_method,
@@ -1351,7 +1374,29 @@ impl Presentation {
                 return Err(Error::KeyIdVMMismatch(vm_id.to_string(), jwk_kid))
             }
         };
-        // TODO: use resolver to pick a default key id
+        if let Some(ref holder) = self.holder {
+            let key_id: Option<String> = if let Some(jwk) = jwk {
+                let key_id_ref = match key_id {
+                    Some(ref kid) => Some(kid.as_str()),
+                    None => None,
+                };
+                Some(
+                    ensure_or_pick_vm(
+                        &holder.to_string(),
+                        ProofPurpose::Authentication,
+                        key_id_ref,
+                        &jwk,
+                        resolver,
+                    )
+                    .await?,
+                )
+            } else {
+                if key_id.is_some() {
+                    return Err(Error::MissingKey);
+                }
+                None
+            };
+        }
         let header = Header {
             algorithm,
             key_id,
