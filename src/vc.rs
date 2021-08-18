@@ -465,6 +465,14 @@ impl TryFrom<String> for URI {
     }
 }
 
+impl URI {
+    fn as_str(self: &Self) -> &str {
+        match self {
+            URI::String(string) => string.as_str(),
+        }
+    }
+}
+
 impl FromStr for URI {
     type Err = Error;
     fn from_str(uri: &str) -> Result<Self, Self::Err> {
@@ -569,7 +577,7 @@ fn jwt_encode(claims: &JWTClaims, keys: &JWTKeys) -> Result<String, Error> {
 
 // Ensure a verification relationship exists between a given issuer and verification method for a
 // given proof purpose, and that the given JWK is matches the given verification method.
-async fn ensure_verification_relationship(
+pub(crate) async fn ensure_verification_relationship(
     issuer: &str,
     proof_purpose: ProofPurpose,
     vm: &str,
@@ -604,7 +612,7 @@ async fn ensure_verification_relationship(
     Ok(())
 }
 
-async fn pick_default_vm(
+pub(crate) async fn pick_default_vm(
     issuer: &str,
     proof_purpose: ProofPurpose,
     jwk: &JWK,
@@ -650,6 +658,12 @@ impl Issuer {
         match self {
             Self::URI(uri) => uri.to_string(),
             Self::Object(object_with_id) => object_with_id.id.to_string(),
+        }
+    }
+    pub fn get_id_ref(&self) -> &str {
+        match self {
+            Self::URI(uri) => uri.as_str(),
+            Self::Object(object_with_id) => object_with_id.id.as_str(),
         }
     }
 }
@@ -1239,6 +1253,17 @@ impl LinkedDataDocument for Credential {
     fn to_value(&self) -> Result<Value, Error> {
         Ok(serde_json::to_value(&self)?)
     }
+
+    fn get_issuer(&self) -> Option<&str> {
+        match self.issuer {
+            Some(ref issuer) => Some(issuer.get_id_ref()),
+            None => None,
+        }
+    }
+
+    fn get_default_proof_purpose(&self) -> Option<ProofPurpose> {
+        Some(ProofPurpose::AssertionMethod)
+    }
 }
 
 impl Presentation {
@@ -1340,7 +1365,7 @@ impl Presentation {
         } else {
             crate::jwk::Algorithm::None
         };
-        let key_id = match (
+        let mut key_id = match (
             jwk.and_then(|jwk| jwk.key_id.clone()),
             verification_method.to_owned(),
         ) {
@@ -1353,7 +1378,7 @@ impl Presentation {
             }
         };
         if let Some(ref holder) = self.holder {
-            let key_id: Option<String> = if let Some(jwk) = jwk {
+            key_id = if let Some(jwk) = jwk {
                 Some(
                     ensure_or_pick_vm(
                         &holder.to_string(),
@@ -1743,6 +1768,17 @@ impl LinkedDataDocument for Presentation {
 
     fn to_value(&self) -> Result<Value, Error> {
         Ok(serde_json::to_value(&self)?)
+    }
+
+    fn get_issuer(&self) -> Option<&str> {
+        match self.holder {
+            Some(ref holder) => Some(holder.as_str()),
+            None => None,
+        }
+    }
+
+    fn get_default_proof_purpose(&self) -> Option<ProofPurpose> {
+        Some(ProofPurpose::Authentication)
     }
 }
 

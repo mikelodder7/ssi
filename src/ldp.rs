@@ -24,7 +24,7 @@ use crate::jwk::{Algorithm, Params as JWKParams, JWK};
 use crate::jws::Header;
 use crate::rdf::DataSet;
 use crate::urdna2015;
-use crate::vc::{LinkedDataProofOptions, Proof, URI};
+use crate::vc::{LinkedDataProofOptions, Proof, ProofPurpose, URI};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -180,6 +180,12 @@ pub fn now_ms() -> DateTime<Utc> {
 pub trait LinkedDataDocument {
     fn get_contexts(&self) -> Result<Option<String>, Error>;
     fn to_value(&self) -> Result<Value, Error>;
+    fn get_default_proof_purpose(&self) -> Option<ProofPurpose> {
+        None
+    }
+    fn get_issuer(&self) -> Option<&str> {
+        None
+    }
     async fn to_dataset_for_signing(
         &self,
         parent: Option<&(dyn LinkedDataDocument + Sync)>,
@@ -290,9 +296,33 @@ impl LinkedDataProofs {
         else {
             pick_proof_suite(key, options.verification_method.as_ref())?
         };
-        // TODO: use resolver to pick a default key id
+        let mut options = options.clone();
+        if options.proof_purpose.is_none() {
+            options.proof_purpose = document.get_default_proof_purpose();
+        }
+        let proof_purpose = options
+            .proof_purpose
+            .as_ref()
+            .ok_or(Error::MissingProofPurpose)?
+            .clone();
+        if let Some(ref issuer) = document.get_issuer() {
+            if let Some(URI::String(ref vm_id)) = options.verification_method {
+                crate::vc::ensure_verification_relationship(
+                    &issuer,
+                    proof_purpose,
+                    vm_id,
+                    &key,
+                    resolver,
+                )
+                .await?;
+            } else {
+                options.verification_method = Some(URI::String(
+                    crate::vc::pick_default_vm(&issuer, proof_purpose, &key, resolver).await?,
+                ))
+            }
+        }
         suite
-            .sign(document, options, resolver, &key, extra_proof_properties)
+            .sign(document, &options, resolver, &key, extra_proof_properties)
             .await
     }
 
@@ -312,6 +342,7 @@ impl LinkedDataProofs {
         else {
             pick_proof_suite(public_key, options.verification_method.as_ref())?
         };
+        // TODO: use resolver to pick a default key id
         suite
             .prepare(document, options, public_key, extra_proof_properties)
             .await
