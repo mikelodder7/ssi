@@ -659,7 +659,7 @@ impl Issuer {
 async fn ensure_or_pick_vm(
     issuer: &str,
     proof_purpose: ProofPurpose,
-    vm_id: Option<&str>,
+    vm_id: Option<&String>,
     jwk: &JWK,
     resolver: &dyn DIDResolver,
 ) -> Result<String, Error> {
@@ -892,15 +892,11 @@ impl Credential {
         };
         let issuer = self.issuer.as_ref().ok_or(Error::MissingIssuer)?.get_id();
         let key_id: Option<String> = if let Some(jwk) = jwk {
-            let key_id_ref = match key_id {
-                Some(ref kid) => Some(kid.as_str()),
-                None => None,
-            };
             Some(
                 ensure_or_pick_vm(
                     &issuer,
                     ProofPurpose::AssertionMethod,
-                    key_id_ref,
+                    key_id.as_ref(),
                     &jwk,
                     resolver,
                 )
@@ -1358,15 +1354,11 @@ impl Presentation {
         };
         if let Some(ref holder) = self.holder {
             let key_id: Option<String> = if let Some(jwk) = jwk {
-                let key_id_ref = match key_id {
-                    Some(ref kid) => Some(kid.as_str()),
-                    None => None,
-                };
                 Some(
                     ensure_or_pick_vm(
                         &holder.to_string(),
                         ProofPurpose::Authentication,
-                        key_id_ref,
+                        key_id.as_ref(),
                         &jwk,
                         resolver,
                     )
