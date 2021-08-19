@@ -15,7 +15,7 @@
   "verificationMethod": [
     {
       "id": "did:example:foo#key1",
-      "type": "JsonWebSignature2020",
+      "type": "JsonWebKey2020",
       "controller": "did:example:foo",
       "publicKeyJwk": {
         "kty": "RSA",
