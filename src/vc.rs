@@ -605,10 +605,7 @@ pub(crate) async fn ensure_verification_relationship(
     }
     let vmm = crate::ldp::resolve_vm(&vm, resolver).await?;
     // Assert jwk is valid for resolved vm
-    let resolved_jwk = vmm.get_jwk()?;
-    if !resolved_jwk.equals_public(jwk) {
-        Err(Error::KeyMismatch)?;
-    }
+    vmm.match_jwk(&jwk)?;
     Ok(())
 }
 
@@ -628,28 +625,21 @@ pub(crate) async fn pick_default_vm(
     let vm_ids = doc
         .get_verification_method_ids_recursive(proof_purpose.clone(), resolver)
         .await?;
-    let mut err = None;
+    let mut err = Error::MissingKey;
     for vm in vm_ids {
         // Try to find a VM that matches this JWK and controller.
         // If one VM fails to resolve, try another.
-        match crate::ldp::resolve_vm(&vm, resolver).await {
-            Ok(vmm) => match vmm.get_jwk() {
-                Ok(resolved_jwk) => {
-                    if resolved_jwk.equals_public(jwk) {
-                        // Found appropriate VM.
-                        return Ok(vm.to_string());
-                    }
-                }
-                Err(e) => err = Some(e),
-            },
-            Err(e) => err = Some(e),
+        let vmm = crate::ldp::resolve_vm(&vm, resolver).await?;
+        match vmm.match_jwk(&jwk) {
+            Ok(()) => {
+                // Found appropriate VM.
+                return Ok(vm.to_string());
+            }
+            Err(e) => err = e,
         }
     }
     // No matching VM found. Return any error encountered.
-    if let Some(err) = err {
-        return Err(err);
-    }
-    Err(Error::KeyMismatch)
+    Err(err)
 }
 
 impl Issuer {
