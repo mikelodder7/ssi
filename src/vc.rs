@@ -584,7 +584,7 @@ pub(crate) async fn ensure_verification_relationship(
     jwk: &JWK,
     resolver: &dyn DIDResolver,
 ) -> Result<(), Error> {
-    let doc = crate::did_resolve::easy_resolve(&did, resolver).await?;
+    let doc = crate::did_resolve::easy_resolve(&issuer, resolver).await?;
     // Assert statement (issuer, proofPurpose, vm)
     let expected_vm_ids = doc
         .get_verification_method_ids_recursive(proof_purpose.clone(), resolver)
