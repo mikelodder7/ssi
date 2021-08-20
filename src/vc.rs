@@ -584,21 +584,12 @@ pub(crate) async fn ensure_verification_relationship(
     jwk: &JWK,
     resolver: &dyn DIDResolver,
 ) -> Result<(), Error> {
-    let doc = crate::did_resolve::easy_resolve(&issuer, resolver).await?;
-    // Assert statement (issuer, proofPurpose, vm)
-    let expected_vm_ids = doc
-        .get_verification_method_ids_recursive(proof_purpose.clone(), resolver)
-        .await?;
-    let vm = vm.to_string();
-    if !expected_vm_ids.contains(&vm) {
-        return Err(Error::MissingVerificationRelationship(
-            issuer.to_string(),
-            proof_purpose,
-            vm,
-        ));
-    }
-    let vmm = crate::ldp::resolve_vm(&vm, resolver).await?;
-    // Assert jwk is valid for resolved vm
+    let vmms =
+        crate::did_resolve::get_verification_methods(issuer, proof_purpose.clone(), resolver)
+            .await?;
+    let vmm = vmms.get(vm).ok_or_else(|| {
+        Error::MissingVerificationRelationship(issuer.to_string(), proof_purpose, vm.to_string())
+    })?;
     vmm.match_jwk(&jwk)?;
     Ok(())
 }
@@ -1707,16 +1698,10 @@ pub async fn get_verification_methods_for_purpose(
     resolver: &dyn DIDResolver,
     proof_purpose: ProofPurpose,
 ) -> Result<Vec<String>, String> {
-    let (res_meta, doc_opt, _meta) = resolver
-        .resolve(did, &ResolutionInputMetadata::default())
-        .await;
-    if let Some(err) = res_meta.error {
-        return Err(err.to_string());
-    }
-    let doc = doc_opt.ok_or("Missing document".to_string())?;
-    doc.get_verification_method_ids_recursive(proof_purpose, resolver)
+    let vmms = crate::did_resolve::get_verification_methods(did, proof_purpose.clone(), resolver)
         .await
-        .map_err(String::from)
+        .map_err(String::from)?;
+    Ok(vmms.into_keys().collect())
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]

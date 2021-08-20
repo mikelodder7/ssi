@@ -814,52 +814,6 @@ impl Document {
         Ok(vm_ids)
     }
 
-    /// Get verification method ids from a DID document, for
-    /// a specific [verification relationship](VerificationRelationship).
-    /// Recurse through DID controllers.
-    pub async fn get_verification_method_ids_recursive(
-        &self,
-        verification_relationship: VerificationRelationship,
-        resolver: &dyn DIDResolver,
-    ) -> Result<Vec<String>, Error> {
-        // TODO: verify VM controller
-        use std::collections::HashSet;
-        let mut seen = HashSet::new();
-        let mut stack = vec![];
-        let mut vm_ids = self
-            .get_verification_method_ids(verification_relationship.clone())
-            .map_err(|e| {
-                Error::UnableToResolve(format!("Unable to get verification method ids: {:?}", e))
-            })?;
-        for controller in self.controller.iter().flatten() {
-            stack.push(controller.clone());
-        }
-        seen.insert(self.id.clone());
-        while let Some(did) = stack.pop() {
-            if seen.contains(&did) {
-                continue;
-            }
-            if seen.len() > crate::did_resolve::MAX_CONTROLLERS {
-                return Err(Error::ControllerLimit);
-            }
-            let doc = crate::did_resolve::easy_resolve(&did, resolver).await?;
-            seen.insert(did);
-            for controller in doc.controller.iter().flatten() {
-                stack.push(controller.clone());
-            }
-            let mut more_vm_ids = doc
-                .get_verification_method_ids(verification_relationship.clone())
-                .map_err(|e| {
-                    Error::UnableToResolve(format!(
-                        "Unable to get verification method ids: {:?}",
-                        e
-                    ))
-                })?;
-            vm_ids.append(&mut more_vm_ids);
-        }
-        Ok(vm_ids)
-    }
-
     pub fn to_representation(&self, content_type: &str) -> Result<Vec<u8>, Error> {
         match content_type {
             TYPE_DID_LD_JSON => Ok(serde_json::to_vec(self)?),
