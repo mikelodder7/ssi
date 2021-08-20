@@ -2425,9 +2425,11 @@ mod tests {
         let key: JWK = serde_json::from_str(JWK_JSON).unwrap();
 
         let mut issue_options = LinkedDataProofOptions::default();
+        issue_options.proof_purpose = Some(ProofPurpose::AssertionMethod);
         issue_options.verification_method = Some(URI::String("did:example:foo#key1".to_string()));
         let algorithm = key.get_algorithm().unwrap();
         let public_key = key.to_public();
+
         let preparation = vc
             .prepare_proof(&public_key, &issue_options, &DIDExample)
             .await
@@ -2688,7 +2690,7 @@ _:c14n0 <https://w3id.org/security#verificationMethod> <https://example.org/foo/
         let vc_issuer_vm = "did:example:foo#key1".to_string();
         vc.issuer = Some(Issuer::URI(URI::String(vc_issuer_key.to_string())));
         vc_issue_options.verification_method = Some(URI::String(vc_issuer_vm));
-        vc_issue_options.proof_purpose = ProofPurpose::AssertionMethod;
+        vc_issue_options.proof_purpose = Some(ProofPurpose::AssertionMethod);
         vc_issue_options.checks = None;
         let vc_proof = vc
             .generate_proof(&key, &vc_issue_options, &DIDExample)
