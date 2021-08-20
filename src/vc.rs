@@ -1176,8 +1176,9 @@ impl Credential {
         &self,
         public_key: &JWK,
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
     ) -> Result<ProofPreparation, Error> {
-        LinkedDataProofs::prepare(self, options, public_key, None).await
+        LinkedDataProofs::prepare(self, options, resolver, public_key, None).await
     }
 
     pub fn add_proof(&mut self, proof: Proof) {
@@ -2427,7 +2428,10 @@ mod tests {
         issue_options.verification_method = Some(URI::String("did:example:foo#key1".to_string()));
         let algorithm = key.get_algorithm().unwrap();
         let public_key = key.to_public();
-        let preparation = vc.prepare_proof(&public_key, &issue_options).await.unwrap();
+        let preparation = vc
+            .prepare_proof(&public_key, &issue_options, &DIDExample)
+            .await
+            .unwrap();
         let signing_input = match preparation.signing_input {
             crate::ldp::SigningInput::Bytes(ref bytes) => &bytes.0,
             #[allow(unreachable_patterns)]
@@ -2684,6 +2688,7 @@ _:c14n0 <https://w3id.org/security#verificationMethod> <https://example.org/foo/
         let vc_issuer_vm = "did:example:foo#key1".to_string();
         vc.issuer = Some(Issuer::URI(URI::String(vc_issuer_key.to_string())));
         vc_issue_options.verification_method = Some(URI::String(vc_issuer_vm));
+        vc_issue_options.proof_purpose = ProofPurpose::AssertionMethod;
         vc_issue_options.checks = None;
         let vc_proof = vc
             .generate_proof(&key, &vc_issue_options, &DIDExample)

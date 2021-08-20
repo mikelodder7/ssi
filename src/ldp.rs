@@ -278,6 +278,41 @@ fn use_epsig(key: &JWK) -> bool {
     return false;
 }
 
+// If a verificationMethod purpose was not provided, pick one. If one was provided,
+// verify that it is correct for the given issuer and proof purpose.
+async fn ensure_or_pick_verification_relationship(
+    options: &mut LinkedDataProofOptions,
+    document: &(dyn LinkedDataDocument + Sync),
+    key: &JWK,
+    resolver: &dyn DIDResolver,
+) -> Result<(), Error> {
+    if options.proof_purpose.is_none() {
+        options.proof_purpose = document.get_default_proof_purpose();
+    }
+    let proof_purpose = options
+        .proof_purpose
+        .as_ref()
+        .ok_or(Error::MissingProofPurpose)?
+        .clone();
+    if let Some(ref issuer) = document.get_issuer() {
+        if let Some(URI::String(ref vm_id)) = options.verification_method {
+            crate::vc::ensure_verification_relationship(
+                &issuer,
+                proof_purpose,
+                vm_id,
+                &key,
+                resolver,
+            )
+            .await?;
+        } else {
+            options.verification_method = Some(URI::String(
+                crate::vc::pick_default_vm(&issuer, proof_purpose, &key, resolver).await?,
+            ))
+        }
+    }
+    Ok(())
+}
+
 pub struct LinkedDataProofs;
 impl LinkedDataProofs {
     // https://w3c-ccg.github.io/ld-proofs/#proof-algorithm
@@ -297,30 +332,7 @@ impl LinkedDataProofs {
             pick_proof_suite(key, options.verification_method.as_ref())?
         };
         let mut options = options.clone();
-        if options.proof_purpose.is_none() {
-            options.proof_purpose = document.get_default_proof_purpose();
-        }
-        let proof_purpose = options
-            .proof_purpose
-            .as_ref()
-            .ok_or(Error::MissingProofPurpose)?
-            .clone();
-        if let Some(ref issuer) = document.get_issuer() {
-            if let Some(URI::String(ref vm_id)) = options.verification_method {
-                crate::vc::ensure_verification_relationship(
-                    &issuer,
-                    proof_purpose,
-                    vm_id,
-                    &key,
-                    resolver,
-                )
-                .await?;
-            } else {
-                options.verification_method = Some(URI::String(
-                    crate::vc::pick_default_vm(&issuer, proof_purpose, &key, resolver).await?,
-                ))
-            }
-        }
+        ensure_or_pick_verification_relationship(&mut options, document, key, resolver).await?;
         suite
             .sign(document, &options, resolver, &key, extra_proof_properties)
             .await
@@ -331,6 +343,7 @@ impl LinkedDataProofs {
     pub async fn prepare(
         document: &(dyn LinkedDataDocument + Sync),
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         public_key: &JWK,
         extra_proof_properties: Option<Map<String, Value>>,
     ) -> Result<ProofPreparation, Error> {
@@ -342,9 +355,12 @@ impl LinkedDataProofs {
         else {
             pick_proof_suite(public_key, options.verification_method.as_ref())?
         };
-        // TODO: use resolver to pick a default key id
+        let mut options = options.clone();
+        ensure_or_pick_verification_relationship(&mut options, document, public_key, resolver)
+            .await?;
+        // TODO: pass resolver to suite.prepare
         suite
-            .prepare(document, options, public_key, extra_proof_properties)
+            .prepare(document, &options, public_key, extra_proof_properties)
             .await
     }
 

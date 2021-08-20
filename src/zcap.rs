@@ -166,6 +166,7 @@ where
         &self,
         public_key: &JWK,
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         capability_chain: &[&str],
     ) -> Result<ProofPreparation, Error> {
         let mut ps = Map::<String, Value>::new();
@@ -173,7 +174,7 @@ where
             "capabilityChain".into(),
             serde_json::to_value(capability_chain)?,
         );
-        LinkedDataProofs::prepare(self, options, public_key, Some(ps)).await
+        LinkedDataProofs::prepare(self, options, resolver, public_key, Some(ps)).await
     }
 
     pub fn set_proof(self, proof: Proof) -> Self {
@@ -306,11 +307,12 @@ where
         &self,
         public_key: &JWK,
         options: &LinkedDataProofOptions,
+        resolver: &dyn DIDResolver,
         target: &URI,
     ) -> Result<ProofPreparation, Error> {
         let mut ps = Map::<String, Value>::new();
         ps.insert("capability".into(), serde_json::to_value(target)?);
-        LinkedDataProofs::prepare(self, options, public_key, Some(ps)).await
+        LinkedDataProofs::prepare(self, options, resolver, public_key, Some(ps)).await
     }
 
     pub fn set_proof(self, proof: Proof) -> Self {
