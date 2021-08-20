@@ -819,44 +819,21 @@ impl Document {
 
     /// Get verification method ids from a DID document, for
     /// a specific [verification relationship](VerificationRelationship).
-    /// Verify each verification method controller relationship to the DID subject.
-    pub async fn get_verification_method_ids_checked(
-        &self,
-        verification_relationship: VerificationRelationship,
-        resolver: &dyn DIDResolver,
-    ) -> Result<Vec<String>, Error> {
-        let vm_ids = self
-            .get_verification_method_ids(verification_relationship.clone())
-            .map_err(|e| {
-                Error::UnableToResolve(format!("Unable to get verification method ids: {:?}", e))
-            })?;
-        for vm_id in &vm_ids {
-            let vmm = crate::ldp::resolve_vm(&vm_id, resolver).await?;
-            // Assert statement (vm, controller, issuer)
-            if vmm.controller != self.id {
-                return Err(Error::ControllerMismatch(
-                    self.id.to_string(),
-                    vmm.controller,
-                ));
-            }
-        }
-        Ok(vm_ids)
-    }
-
-    /// Get verification method ids from a DID document, for
-    /// a specific [verification relationship](VerificationRelationship).
     /// Recurse through DID controllers.
     pub async fn get_verification_method_ids_recursive(
         &self,
         verification_relationship: VerificationRelationship,
         resolver: &dyn DIDResolver,
     ) -> Result<Vec<String>, Error> {
+        // TODO: verify VM controller
         use std::collections::HashSet;
         let mut seen = HashSet::new();
         let mut stack = vec![];
         let mut vm_ids = self
-            .get_verification_method_ids_checked(verification_relationship.clone(), resolver)
-            .await?;
+            .get_verification_method_ids(verification_relationship.clone())
+            .map_err(|e| {
+                Error::UnableToResolve(format!("Unable to get verification method ids: {:?}", e))
+            })?;
         for controller in self.controller.iter().flatten() {
             stack.push(controller.clone());
         }
@@ -874,8 +851,13 @@ impl Document {
                 stack.push(controller.clone());
             }
             let mut more_vm_ids = doc
-                .get_verification_method_ids_checked(verification_relationship.clone(), resolver)
-                .await?;
+                .get_verification_method_ids(verification_relationship.clone())
+                .map_err(|e| {
+                    Error::UnableToResolve(format!(
+                        "Unable to get verification method ids: {:?}",
+                        e
+                    ))
+                })?;
             vm_ids.append(&mut more_vm_ids);
         }
         Ok(vm_ids)
