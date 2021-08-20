@@ -34,6 +34,9 @@ pub const ERROR_REPRESENTATION_NOT_SUPPORTED: &str = "representationNotSupported
 pub const TYPE_DID_RESOLUTION: &'static str =
     "application/ld+json;profile=\"https://w3id.org/did-resolution\";charset=utf-8";
 
+// Maximum number of DID controllers to resolve at once
+pub const MAX_CONTROLLERS: usize = 100;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum Metadata {
@@ -1113,6 +1116,9 @@ pub async fn get_verification_methods(
             let doc = easy_resolve(&did, resolver).await?;
             for controller in doc.controller.iter().flatten() {
                 dids_to_resolve.push(controller.clone());
+            }
+            if did_docs.len() > MAX_CONTROLLERS {
+                return Err(Error::ControllerLimit);
             }
             did_docs.insert(did, doc);
         }

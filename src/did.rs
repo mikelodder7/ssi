@@ -36,9 +36,6 @@ pub const ALT_DEFAULT_CONTEXT: &str = crate::jsonld::W3ID_DID_V1_CONTEXT;
 // v0.11 context used by universal resolver
 pub const V0_11_CONTEXT: &str = "https://w3id.org/did/v0.11";
 
-// Maximum depth to follow DID controller property.
-pub const MAX_CONTROLLER_DEPTH: usize = 10;
-
 // @TODO parsed data structs for DID and DIDURL
 type DID = String;
 
@@ -842,8 +839,8 @@ impl Document {
             if seen.contains(&did) {
                 continue;
             }
-            if seen.len() > MAX_CONTROLLER_DEPTH {
-                return Err(Error::ControllerDepth);
+            if seen.len() > crate::did_resolve::MAX_CONTROLLERS {
+                return Err(Error::ControllerLimit);
             }
             let doc = crate::did_resolve::easy_resolve(&did, resolver).await?;
             seen.insert(did);
