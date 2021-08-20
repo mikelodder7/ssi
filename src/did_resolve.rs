@@ -1111,6 +1111,9 @@ pub async fn get_verification_methods(
     while let Some(did) = dids_to_resolve.pop() {
         if !did_docs.contains_key(&did) {
             let doc = easy_resolve(&did, resolver).await?;
+            for controller in doc.controller.iter().flatten() {
+                dids_to_resolve.push(controller.clone());
+            }
             did_docs.insert(did, doc);
         }
     }
