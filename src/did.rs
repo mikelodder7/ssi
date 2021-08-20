@@ -15,7 +15,7 @@ use crate::jwk::JWK;
 use crate::one_or_many::OneOrMany;
 
 /// <https://w3c.github.io/did-core/#dfn-verification-relationship>
-type VerificationRelationship = crate::vc::ProofPurpose;
+pub type VerificationRelationship = crate::vc::ProofPurpose;
 
 use async_trait::async_trait;
 use chrono::prelude::{DateTime, Utc};
@@ -416,18 +416,21 @@ impl VerificationMethod {
         match self {
             Self::DIDURL(didurl) => didurl.to_string(),
             Self::RelativeDIDURL(relative_did_url) => relative_did_url.to_absolute(did).to_string(),
-            Self::Map(map) => {
-                if let Ok(rel_did_url) = RelativeDIDURL::from_str(&map.id) {
-                    rel_did_url.to_absolute(did).to_string()
-                } else {
-                    map.id.to_string()
-                }
-            }
+            Self::Map(map) => map.get_id(did),
         }
     }
 }
 
 impl VerificationMethodMap {
+    /// Return a DID URL for this verification method, given a DID as base URI
+    pub fn get_id(&self, did: &str) -> String {
+        if let Ok(rel_did_url) = RelativeDIDURL::from_str(&self.id) {
+            rel_did_url.to_absolute(did).to_string()
+        } else {
+            self.id.to_string()
+        }
+    }
+
     pub fn get_jwk(&self) -> Result<JWK, Error> {
         match (
             self.public_key_jwk.as_ref(),
@@ -692,7 +695,7 @@ impl DocumentBuilder {
 }
 
 // When selecting a object from JSON-LD document, @context should be copied into the sub-document.
-fn merge_context(dest_opt: &mut Option<Value>, source: &Contexts) {
+pub(crate) fn merge_context(dest_opt: &mut Option<Value>, source: &Contexts) {
     let source = OneOrMany::<Context>::from(source.clone());
     let dest = dest_opt.take().unwrap_or(Value::Null);
     let mut dest_array = match dest {
@@ -865,14 +868,7 @@ impl Document {
             if seen.len() > MAX_CONTROLLER_DEPTH {
                 return Err(Error::ControllerDepth);
             }
-            let (res_meta, doc_opt, _meta) = resolver
-                .resolve(&did, &ResolutionInputMetadata::default())
-                .await;
-            if let Some(err) = res_meta.error {
-                return Err(Error::UnableToResolve(err.to_string()));
-            }
-            let doc =
-                doc_opt.ok_or_else(|| Error::UnableToResolve("Missing document".to_string()))?;
+            let doc = crate::did_resolve::easy_resolve(&did, resolver).await?;
             seen.insert(did);
             for controller in doc.controller.iter().flatten() {
                 stack.push(controller.clone());

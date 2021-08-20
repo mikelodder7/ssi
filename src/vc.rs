@@ -584,13 +584,7 @@ pub(crate) async fn ensure_verification_relationship(
     jwk: &JWK,
     resolver: &dyn DIDResolver,
 ) -> Result<(), Error> {
-    let (res_meta, doc_opt, _meta) = resolver
-        .resolve(issuer, &ResolutionInputMetadata::default())
-        .await;
-    if let Some(err) = res_meta.error {
-        return Err(Error::UnableToResolve(err.to_string()));
-    }
-    let doc = doc_opt.ok_or_else(|| Error::UnableToResolve("Missing document".to_string()))?;
+    let doc = crate::did_resolve::easy_resolve(&did, resolver).await?;
     // Assert statement (issuer, proofPurpose, vm)
     let expected_vm_ids = doc
         .get_verification_method_ids_recursive(proof_purpose.clone(), resolver)
@@ -615,25 +609,16 @@ pub(crate) async fn pick_default_vm(
     jwk: &JWK,
     resolver: &dyn DIDResolver,
 ) -> Result<String, Error> {
-    let (res_meta, doc_opt, _meta) = resolver
-        .resolve(issuer, &ResolutionInputMetadata::default())
-        .await;
-    if let Some(err) = res_meta.error {
-        return Err(Error::UnableToResolve(err.to_string()));
-    }
-    let doc = doc_opt.ok_or_else(|| Error::UnableToResolve("Missing document".to_string()))?;
-    let vm_ids = doc
-        .get_verification_method_ids_recursive(proof_purpose.clone(), resolver)
-        .await?;
+    let vm_ids =
+        crate::did_resolve::get_verification_methods(issuer, proof_purpose.clone(), resolver)
+            .await?;
     let mut err = Error::MissingKey;
-    for vm in vm_ids {
+    for (vm_id, vmm) in vm_ids {
         // Try to find a VM that matches this JWK and controller.
-        // If one VM fails to resolve, try another.
-        let vmm = crate::ldp::resolve_vm(&vm, resolver).await?;
         match vmm.match_jwk(&jwk) {
             Ok(()) => {
                 // Found appropriate VM.
-                return Ok(vm.to_string());
+                return Ok(vm_id.to_string());
             }
             Err(e) => err = e,
         }
